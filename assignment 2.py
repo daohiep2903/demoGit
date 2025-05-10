@@ -71,4 +71,4 @@ print('Label của nó được dự đoán là:')
 print(label)
 
 
-dsds
+
