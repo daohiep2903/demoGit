@@ -69,3 +69,6 @@ print('Dòng chọn từ x_test:')
 print(test)
 print('Label của nó được dự đoán là:')
 print(label)
+
+
+dsds
