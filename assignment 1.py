@@ -1,72 +1,77 @@
+import cv2
 import numpy as np
-from skimage.io import imread
-from skimage.transform import resize
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
-#pip install scikit-learn scikit-image matplotlib
-#pip install numpy
-# ==== 1. Đọc ảnh và gán nhãn ====
-duong_dan_anh = ["D:/c/c1.png", "D:/c/c2.png", "D:/c/c3.png", "D:/c/c4.png"]  # Đặt ảnh cùng thư mục với file này
-nhan = [0, 1, 1, 1]  # 0 = Nhà, 1 = Hoa
 
-# ==== 2. Trích đặc trưng màu bằng histogram RGB ====
-def trich_dac_trung_mau(anh, bins=(8, 8, 8)):
-    anh_doi_kich_thuoc = resize(anh, (128, 128), anti_aliasing=True)
-    if anh_doi_kich_thuoc.shape[-1] == 4:
-        anh_doi_kich_thuoc = anh_doi_kich_thuoc[:, :, :3]  # Bỏ kênh alpha nếu có
-    hist, _ = np.histogramdd(
-        anh_doi_kich_thuoc.reshape(-1, 3),
-        bins=bins,
-        range=[(0, 1), (0, 1), (0, 1)]
-    )
-    hist = hist.flatten()
-    hist /= hist.sum()  # Chuẩn hóa histogram
+# === Hàm tính histogram RGB ===
+def tinh_histogram(anh, bins=64, khoang=([0, 256])):
+    hist = np.zeros((bins*3), dtype=np.float32)
+    so_pixel = 0
+    b, g, r = cv2.split(anh)
+    for kenh in (b, g, r):
+        kenh_hist, _ = np.histogram(kenh, bins=bins, range=khoang)
+        hist[so_pixel:so_pixel + bins] = kenh_hist
+        so_pixel += bins
     return hist
 
-# Trích đặc trưng cho tất cả ảnh
-dac_trung = []
-for duong_dan in duong_dan_anh:
-    anh = imread(duong_dan)
-    dac_trung_mau = trich_dac_trung_mau(anh)
-    dac_trung.append(dac_trung_mau)
+# === Đọc ảnh kiểm tra ===
+anh_kiem_tra = cv2.imread('D:\\a\\a1.png')
+anh_kiem_tra = cv2.resize(anh_kiem_tra, (300, 300))
 
-X = np.array(dac_trung)
-y = np.array(nhan)
+# === Danh sách ảnh dữ liệu và histogram ===
+anh_du_lieu = []
+hist_du_lieu = []
 
-# ==== 3. Huấn luyện bộ phân loại KNN ====
-knn = KNeighborsClassifier(n_neighbors=1)
-knn.fit(X, y)
-du_doan = knn.predict(X)
+# Đọc các ảnh từ thư mục 'c'
+for i in range(1, 4):
+    du_lieu = cv2.imread(f'D:\\c\\c{i}.png')
+    du_lieu = cv2.resize(du_lieu, (300, 300))
+    hist = tinh_histogram(du_lieu).flatten()
+    anh_du_lieu.append(du_lieu)
+    hist_du_lieu.append(hist)
 
-# ==== 4. Đánh giá độ chính xác ====
-print(" Độ chính xác:", accuracy_score(y, du_doan))
-print(" Báo cáo phân loại:")
-print(classification_report(y, du_doan, target_names=["Nhà", "Hoa"]))
+# === Tính histogram cho ảnh kiểm tra ===
+hist_kiem_tra = tinh_histogram(anh_kiem_tra).flatten()
 
-# ==== 5. Phân đoạn ảnh bằng thuật toán K-means ====
-anh_mau = imread(duong_dan_anh[0])
-anh_mau = resize(anh_mau, (128, 128), anti_aliasing=True)
-if anh_mau.shape[-1] == 4:
-    anh_mau = anh_mau[:, :, :3]
+# === Áp dụng KNN tìm ảnh gần giống ===
+K = 3
+tim_lan_can = NearestNeighbors(n_neighbors=K)
+tim_lan_can.fit(hist_du_lieu)
+_, chi_so = tim_lan_can.kneighbors([hist_kiem_tra])
 
-cac_pixel = anh_mau.reshape((-1, 3))
-kmeans = KMeans(n_clusters=3, random_state=42)
-kmeans.fit(cac_pixel)
-anh_phan_cum = kmeans.labels_.reshape((128, 128))
+# === Hiển thị ảnh kiểm tra và ảnh gần giống ===
+cv2.imshow("Ảnh kiểm tra", anh_kiem_tra)
+for i in range(K):
+    cv2.imshow(f"Ảnh gần giống {i+1}", anh_du_lieu[chi_so[0][i]])
 
-# ==== 6. Hiển thị ảnh gốc và ảnh sau phân đoạn ====
+# === PHÂN VÙNG ẢNH KIỂM TRA BẰNG KMEANS ===
+# Chuyển ảnh sang không gian RGB
+anh_rgb = cv2.cvtColor(anh_kiem_tra, cv2.COLOR_BGR2RGB)
+pixels = anh_rgb.reshape((-1, 3))
+
+# Số cụm (có thể chỉnh)
+so_cum = 5
+kmeans = KMeans(n_clusters=so_cum, random_state=0)
+nhan = kmeans.fit_predict(pixels)
+
+# Tạo ảnh mới từ trung tâm cụm
+anh_phan_cum = kmeans.cluster_centers_[nhan].astype(np.uint8)
+anh_phan_cum = anh_phan_cum.reshape(anh_rgb.shape)
+
+# Hiển thị bằng matplotlib
 plt.figure(figsize=(10, 4))
 plt.subplot(1, 2, 1)
-plt.title("Ảnh gốc ")
-plt.imshow(anh_mau)
+plt.title("Ảnh gốc (RGB)")
+plt.imshow(anh_rgb)
 plt.axis('off')
 
 plt.subplot(1, 2, 2)
-plt.title("Phân đoạn ảnh bằng K-means")
-plt.imshow(anh_phan_cum, cmap='viridis')
+plt.title(f"Phân vùng KMeans (K={so_cum})")
+plt.imshow(anh_phan_cum)
 plt.axis('off')
-
 plt.tight_layout()
 plt.show()
+
+cv2.waitKey(0)
+cv2.destroyAllWindows()
